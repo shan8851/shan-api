@@ -39,9 +39,10 @@ npm run db:generate
 npm run db:migrate
 ```
 
-3. Optional seed scaffold:
+3. Bootstrap import from `shan_site` (dry-run first):
 
 ```bash
+npm run db:seed -- --dry-run
 npm run db:seed
 ```
 
@@ -92,7 +93,16 @@ curl -s "$API_BASE_URL/v1/projects?limit=2&cursor=$NEXT_CURSOR"
 
 Current data behavior:
 - Endpoints are DB-backed.
-- Content import/seed synchronization from `shan_site` is intentionally deferred to a later slice.
+- `shan_site` import is a bootstrap path to initialize data.
+- Postgres remains the canonical source of truth after bootstrap.
+- The importer is idempotent: re-runs upsert by stable slug/key and deactivate stale rows.
+- `version` increments only on meaningful row changes (including reactivation/deactivation), and stays stable on no-op re-runs.
+
+Optional bootstrap source override:
+
+```bash
+SHAN_SITE_ROOT=/custom/path/to/shan_site npm run db:seed -- --dry-run
+```
 
 ## Validation commands
 

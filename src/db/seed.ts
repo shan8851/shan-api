@@ -1,55 +1,77 @@
 import { loadEnvironment } from '../config/env.js';
 
 import { createDatabaseConnection } from './client.js';
-import { meta, nowEntries } from './schema.js';
+import { loadShanSiteSnapshot } from './importer/loadShanSiteSnapshot.js';
+import {
+  runBootstrapImport,
+  type RunBootstrapImportOptions,
+} from './importer/runBootstrapImport.js';
+import type { BootstrapImportSummary, ImportMode } from './importer/types.js';
 
-const seed = async (): Promise<void> => {
+type SeedCliOptions = {
+  mode: ImportMode;
+};
+
+const parseSeedCliOptions = (argv: string[]): SeedCliOptions => ({
+  mode: argv.includes('--dry-run') ? 'dry-run' : 'apply',
+});
+
+const formatResourceSummaryLine = (
+  label: string,
+  summary: {
+    inserted: number;
+    updated: number;
+    deactivated: number;
+    unchanged: number;
+  },
+): string =>
+  `${label}: inserted=${summary.inserted}, updated=${summary.updated}, deactivated=${summary.deactivated}, unchanged=${summary.unchanged}`;
+
+const formatMetaSummaryLine = (
+  summary: BootstrapImportSummary['meta'],
+): string =>
+  `meta: inserted=${summary.inserted}, updated=${summary.updated}, unchanged=${summary.unchanged}`;
+
+const printSummary = (summary: BootstrapImportSummary): void => {
+  const lines = [
+    `Bootstrap import mode: ${summary.mode}`,
+    formatResourceSummaryLine('uses', summary.uses),
+    formatResourceSummaryLine('now_entries', summary.nowEntries),
+    formatResourceSummaryLine('projects', summary.projects),
+    formatMetaSummaryLine(summary.meta),
+  ];
+
+  process.stdout.write(`${lines.join('\n')}\n`);
+};
+
+const runSeed = async (): Promise<void> => {
   const environment = loadEnvironment();
   const databaseConnection = createDatabaseConnection(environment.databaseUrl);
-
-  const now = new Date();
+  const cliOptions = parseSeedCliOptions(process.argv.slice(2));
 
   try {
-    await databaseConnection.client
-      .insert(meta)
-      .values({
-        key: 'global_last_updated',
-        value: now.toISOString(),
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: meta.key,
-        set: {
-          value: now.toISOString(),
-          updatedAt: now,
-        },
-      });
+    const snapshot = await loadShanSiteSnapshot();
 
-    await databaseConnection.client
-      .insert(meta)
-      .values({
-        key: 'now_narrative',
-        value:
-          'Current loop: ship small AI apps, get usage signal, then improve reliability.',
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
+    const importOptions: RunBootstrapImportOptions = {
+      mode: cliOptions.mode,
+      snapshot,
+    };
 
-    await databaseConnection.client
-      .insert(nowEntries)
-      .values({
-        slug: 'seed-now-entry',
-        label: 'Seed entry',
-        text: 'This is a scaffold seed row for first-run verification.',
-        href: null,
-        sortOrder: 0,
-        payload: {},
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
+    const summary = await runBootstrapImport(
+      databaseConnection.client,
+      importOptions,
+    );
+
+    printSummary(summary);
   } finally {
     await databaseConnection.close();
   }
 };
 
-void seed();
+runSeed().catch((error: unknown) => {
+  const errorMessage =
+    error instanceof Error ? error.stack ?? error.message : String(error);
+
+  process.stderr.write(`Seed failed: ${errorMessage}\n`);
+  process.exit(1);
+});

@@ -46,6 +46,21 @@ openssl rand -hex 32
 
 1. Copy env template and fill values.
 2. Run migrations using `DATABASE_URL_MIGRATIONS`.
-3. Start app and test:
+3. Run bootstrap import from `shan_site`:
+   - dry-run: `npm run db:seed -- --dry-run`
+   - apply: `npm run db:seed`
+4. Start app and test:
    - public: `/healthz`
    - protected: `/readyz` and `/metrics` with `x-internal-api-key`
+
+## Bootstrap import notes
+
+- Source files:
+  - `/home/shan/giles/shan_site/app/content/uses.ts`
+  - `/home/shan/giles/shan_site/app/content/operatorFrontDoor.ts`
+- Import is idempotent:
+  - upserts by stable slug/key
+  - updates changed rows
+  - deactivates stale rows with `is_active=false`
+  - increments `version` only for meaningful row changes (including reactivation/deactivation)
+- Postgres is the long-term canonical source of truth after bootstrap.
