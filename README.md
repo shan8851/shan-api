@@ -11,3 +11,7 @@ Standalone backend API for Shan content resources (`uses`, `projects`, `now`).
 - `docs/implementation-plan.md`
 - `docs/decisions-log.md`
 - `docs/content-source-map.md`
+- `docs/local-setup.md`
+
+## Env setup
+- Copy `.env.example` to `.env` and fill Neon + internal key values.
