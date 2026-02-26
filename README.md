@@ -10,3 +10,4 @@ Standalone backend API for Shan content resources (`uses`, `projects`, `now`).
 ## Docs
 - `docs/implementation-plan.md`
 - `docs/decisions-log.md`
+- `docs/content-source-map.md`
