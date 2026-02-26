@@ -88,7 +88,7 @@ Tasks:
   - `GET /readyz` (protected)
   - `GET /metrics` (protected)
 - Define OpenAPI security scheme for protected endpoints (`x-internal-api-key`).
-- Define pagination contract for list resources:
+- Define pagination contract for paginated list resources (`/v1/projects` in v1):
   - `limit` (default 20, max 50)
   - opaque `cursor` (base64 of `updated_at:id`)
   - stable order `updated_at DESC, id DESC`
@@ -182,7 +182,7 @@ Deliverables:
 2. **Region:** EU-first (London preferred, nearest EU fallback).
 3. **Database:** Neon Postgres, managed separately from app host.
 4. **Monitoring:** Grafana-first (Prometheus metrics + Loki logs + uptime checks + Discord alerting).
-5. **Pagination contract:** cursor-based on `updated_at DESC, id DESC`; default `limit=20`, max `50`, opaque cursor, no total count in v1.
+5. **Pagination contract:** `/v1/projects` uses cursor pagination on `updated_at DESC, id DESC`; default `limit=20`, max `50`, opaque cursor, no total count in v1. `/v1/now` and `/v1/uses` are snapshot endpoints.
 6. **Auth for protected endpoints:** `x-internal-api-key` checked against `INTERNAL_API_KEYS` (multi-key support for rotation).
 7. **Tracing posture:** lightweight `request_id`/`trace_id` correlation in v1; full distributed tracing deferred to v1.1.
 
@@ -190,7 +190,7 @@ Deliverables:
 - Railway keeps DX high and reduces deployment drag.
 - Neon keeps Postgres strong and production-like, with clean migration discipline.
 - Grafana aligns with real-world observability practice and keeps future portability.
-- Cursor pagination teaches stable API contracts now instead of bolting them on later.
+- Cursor pagination on list-heavy resources teaches stable API contracts without overcomplicating snapshot resources.
 
 ## Open questions
 - None (all previously open choices are now locked in `decisions-log.md`).

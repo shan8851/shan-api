@@ -305,13 +305,16 @@ Use this shape for new entries:
 - **Owner:** Shan
 - **Context:** lock deterministic pagination semantics before implementation.
 - **Options considered:** offset pagination, cursor pagination with varying sort fields.
-- **Decision:** cursor-based pagination for list endpoints (`uses`, `projects`, `now`):
-  - stable sort: `updated_at DESC, id DESC`
-  - `limit` default `20`, max `50`
-  - opaque base64 cursor from `updated_at:id`
-  - response metadata includes `nextCursor`, `hasMore`, and `asOf`
-  - no `totalCount` in v1
-- **Consequences:** consistent performance and predictable paging under updates.
+- **Decision:**
+  - `GET /v1/projects` uses cursor pagination:
+    - stable sort: `updated_at DESC, id DESC`
+    - `limit` default `20`, max `50`
+    - opaque base64 cursor from `updated_at:id`
+    - response metadata includes `nextCursor`, `hasMore`, and `asOf`
+    - no `totalCount` in v1
+  - `GET /v1/now` is snapshot (non-paginated)
+  - `GET /v1/uses` is snapshot (non-paginated)
+- **Consequences:** pagination complexity is focused where it adds value, while snapshot resources stay simple and explicit.
 - **Revisit trigger:** if UX requires totals or alternate sort modes.
 
 ### D-023 — Auth mechanism for protected endpoints
