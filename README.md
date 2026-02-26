@@ -12,6 +12,7 @@ Standalone backend API for Shan content resources (`uses`, `projects`, `now`, `p
 
 - `docs/decisions-log.md` — locked architecture/product decisions
 - `docs/next-steps.md` — active execution plan (hardening/deploy/write-path)
+- `docs/private-write-path.md` — operator-only write lane draft (opinionated first pass)
 - `docs/local-setup.md` — env + local setup flow
 - `docs/content-source-map.md` — current bootstrap source mapping from `shan_site`
 - `docs/contract-review-checklist.md` — OpenAPI review checklist

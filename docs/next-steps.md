@@ -38,6 +38,9 @@ This is the active plan from the current repo state.
 5. Add first uptime monitor + Discord alerts.
 
 ## Private write path planning (high priority)
+Reference draft:
+- `docs/private-write-path.md`
+
 Design an internal/operator-only write lane (no public writes) for:
 - now updates
 - uses updates
