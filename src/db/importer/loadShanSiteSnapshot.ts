@@ -1,11 +1,14 @@
-import { access } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, readFile, readdir } from 'node:fs/promises';
+import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import matter from 'gray-matter';
+import readingTime from 'reading-time';
 import { z } from 'zod';
 
 import type {
   BootstrapContentSnapshot,
+  PostSnapshot,
   ProjectSnapshot,
 } from './types.js';
 
@@ -58,6 +61,18 @@ const operatorModuleSchema = z.object({
   aiProjects: z.array(aiProjectSchema),
 });
 
+const frontmatterDateSchema = z.union([z.string(), z.date()]);
+
+const writingPostFrontmatterSchema = z.object({
+  title: z.string().trim().min(1),
+  summary: z.string().trim().min(1),
+  date: frontmatterDateSchema,
+  updated: frontmatterDateSchema.optional(),
+  tags: z.array(z.string()).optional(),
+  author: z.string().trim().min(1).optional(),
+  featured: z.boolean().optional(),
+});
+
 const parseDateOnlyString = (value: string): Date | null => {
   const parsedDate = new Date(`${value}T00:00:00.000Z`);
 
@@ -66,6 +81,33 @@ const parseDateOnlyString = (value: string): Date | null => {
   }
 
   return parsedDate;
+};
+
+const parseFrontmatterDate = (value: z.infer<typeof frontmatterDateSchema>): Date | null => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return parsedDate;
+};
+
+const roundToTwoDecimals = (value: number): number =>
+  Math.round(value * 100) / 100;
+
+const getLatestTimestamp = (timestamps: Date[]): Date | null => {
+  if (timestamps.length === 0) {
+    return null;
+  }
+
+  return timestamps.reduce((latestTimestamp, timestamp) =>
+    timestamp > latestTimestamp ? timestamp : latestTimestamp,
+  );
 };
 
 const assertFileExists = async (filePath: string): Promise<void> => {
@@ -115,6 +157,93 @@ const mapAiProjects = (
     },
   }));
 
+const loadWritingPostFromFile = async (
+  writingDirectoryPath: string,
+  fileName: string,
+): Promise<PostSnapshot> => {
+  const filePath = join(writingDirectoryPath, fileName);
+  const fileContent = await readFile(filePath, 'utf8');
+  const parsedMarkdown = matter(fileContent);
+  const frontmatter = writingPostFrontmatterSchema.parse(parsedMarkdown.data);
+
+  const publishedAt = parseFrontmatterDate(frontmatter.date);
+
+  if (!publishedAt) {
+    throw new Error(
+      `Invalid "date" frontmatter in writing file: ${filePath}`,
+    );
+  }
+
+  const updatedAtSource = frontmatter.updated
+    ? parseFrontmatterDate(frontmatter.updated)
+    : null;
+
+  if (frontmatter.updated && !updatedAtSource) {
+    throw new Error(
+      `Invalid "updated" frontmatter in writing file: ${filePath}`,
+    );
+  }
+
+  const normalizedTags = (frontmatter.tags ?? [])
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+
+  const readingStats = readingTime(parsedMarkdown.content);
+  const slug = basename(fileName, extname(fileName));
+
+  return {
+    slug,
+    title: frontmatter.title,
+    summary: frontmatter.summary,
+    bodyMarkdown: parsedMarkdown.content.trim(),
+    publishedAt,
+    updatedAtSource,
+    author: frontmatter.author ?? null,
+    featured: frontmatter.featured ?? false,
+    tags: normalizedTags,
+    readingTimeText: readingStats.text,
+    readingTimeMinutes: roundToTwoDecimals(readingStats.minutes),
+    payload: {
+      source: 'shan_site',
+      sourcePath: `content/writing/${fileName}`,
+    },
+  };
+};
+
+const loadWritingPosts = async (
+  shanSiteRootPath: string,
+): Promise<{ lastUpdated: Date | null; items: PostSnapshot[] }> => {
+  const writingDirectoryPath = join(shanSiteRootPath, 'content/writing');
+  await assertFileExists(writingDirectoryPath);
+
+  const writingDirectoryEntries = await readdir(writingDirectoryPath, {
+    withFileTypes: true,
+  });
+
+  const writingFileNames = writingDirectoryEntries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((entryName) => ['.md', '.mdx'].includes(extname(entryName).toLowerCase()))
+    .sort((leftFileName, rightFileName) =>
+      leftFileName.localeCompare(rightFileName),
+    );
+
+  const posts = await Promise.all(
+    writingFileNames.map((fileName) =>
+      loadWritingPostFromFile(writingDirectoryPath, fileName),
+    ),
+  );
+
+  const postsLastUpdated = getLatestTimestamp(
+    posts.map((post) => post.updatedAtSource ?? post.publishedAt),
+  );
+
+  return {
+    lastUpdated: postsLastUpdated,
+    items: posts,
+  };
+};
+
 export type LoadShanSiteSnapshotOptions = {
   shanSiteRootPath?: string;
 };
@@ -154,6 +283,8 @@ export const loadShanSiteSnapshot = async (
     ...mapAiProjects(operatorModule.aiProjects),
   ];
 
+  const posts = await loadWritingPosts(shanSiteRootPath);
+
   return {
     uses: {
       lastUpdated: usesLastUpdated,
@@ -172,5 +303,6 @@ export const loadShanSiteSnapshot = async (
       lastUpdated: siteLastUpdated,
       items: projectItems,
     },
+    posts,
   };
 };

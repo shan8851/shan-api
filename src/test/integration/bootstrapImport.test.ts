@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { eq, inArray } from 'drizzle-orm';
 
-import { meta, nowEntries, projects, uses } from '../../db/schema.js';
+import { meta, nowEntries, posts, projects, uses } from '../../db/schema.js';
 import {
   runBootstrapImport,
   type RunBootstrapImportOptions,
@@ -73,6 +73,47 @@ const createSnapshot = (): BootstrapContentSnapshot => ({
       },
     ],
   },
+  posts: {
+    lastUpdated: new Date('2026-02-24T00:00:00.000Z'),
+    items: [
+      {
+        slug: 'building-with-agents',
+        title: 'Building with agents',
+        summary: 'Practical lessons from shipping with coding agents.',
+        bodyMarkdown:
+          '# Building with agents\n\nUse tight feedback loops and explicit constraints.',
+        publishedAt: new Date('2026-02-20T00:00:00.000Z'),
+        updatedAtSource: new Date('2026-02-24T00:00:00.000Z'),
+        author: 'Shan',
+        featured: true,
+        tags: ['agents', 'backend'],
+        readingTimeText: '1 min read',
+        readingTimeMinutes: 1,
+        payload: {
+          source: 'test',
+          sourcePath: 'content/writing/building-with-agents.md',
+        },
+      },
+      {
+        slug: 'shipping-principles',
+        title: 'Shipping principles',
+        summary: 'Execution rules for maintaining momentum.',
+        bodyMarkdown:
+          '# Shipping principles\n\nPrefer small, auditable changes.',
+        publishedAt: new Date('2026-02-18T00:00:00.000Z'),
+        updatedAtSource: null,
+        author: null,
+        featured: false,
+        tags: ['execution'],
+        readingTimeText: '1 min read',
+        readingTimeMinutes: 1,
+        payload: {
+          source: 'test',
+          sourcePath: 'content/writing/shipping-principles.md',
+        },
+      },
+    ],
+  },
 });
 
 const runImport = async (
@@ -105,7 +146,7 @@ describe.sequential('bootstrap import', () => {
 
     const summary = await runImport(harness, snapshot);
 
-    const [activeUses, activeNowEntries, activeProjects, metaRows] =
+    const [activeUses, activeNowEntries, activeProjects, activePosts, metaRows] =
       await Promise.all([
         harness.databaseConnection.client
           .select({ id: uses.id })
@@ -120,6 +161,10 @@ describe.sequential('bootstrap import', () => {
           .from(projects)
           .where(eq(projects.isActive, true)),
         harness.databaseConnection.client
+          .select({ id: posts.id })
+          .from(posts)
+          .where(eq(posts.isActive, true)),
+        harness.databaseConnection.client
           .select({ key: meta.key, value: meta.value })
           .from(meta)
           .where(
@@ -127,6 +172,7 @@ describe.sequential('bootstrap import', () => {
               'uses_last_updated',
               'now_last_updated',
               'projects_last_updated',
+              'posts_last_updated',
               'now_narrative',
               'global_last_updated',
             ]),
@@ -136,11 +182,13 @@ describe.sequential('bootstrap import', () => {
     expect(summary.uses.inserted).toBe(snapshot.uses.sections.length);
     expect(summary.nowEntries.inserted).toBe(snapshot.now.entries.length);
     expect(summary.projects.inserted).toBe(snapshot.projects.items.length);
+    expect(summary.posts.inserted).toBe(snapshot.posts.items.length);
 
     expect(activeUses).toHaveLength(snapshot.uses.sections.length);
     expect(activeNowEntries).toHaveLength(snapshot.now.entries.length);
     expect(activeProjects).toHaveLength(snapshot.projects.items.length);
-    expect(metaRows).toHaveLength(5);
+    expect(activePosts).toHaveLength(snapshot.posts.items.length);
+    expect(metaRows).toHaveLength(6);
   });
 
   it('is idempotent when applying the same snapshot twice', async () => {
@@ -150,7 +198,7 @@ describe.sequential('bootstrap import', () => {
 
     const secondRunSummary = await runImport(harness, snapshot);
 
-    const [activeUses, activeNowEntries, activeProjects, useVersions] =
+    const [activeUses, activeNowEntries, activeProjects, activePosts, useVersions] =
       await Promise.all([
         harness.databaseConnection.client
           .select({ id: uses.id })
@@ -164,6 +212,10 @@ describe.sequential('bootstrap import', () => {
           .select({ id: projects.id })
           .from(projects)
           .where(eq(projects.isActive, true)),
+        harness.databaseConnection.client
+          .select({ id: posts.id })
+          .from(posts)
+          .where(eq(posts.isActive, true)),
         harness.databaseConnection.client
           .select({ version: uses.version })
           .from(uses)
@@ -188,10 +240,17 @@ describe.sequential('bootstrap import', () => {
       deactivated: 0,
       unchanged: snapshot.projects.items.length,
     });
+    expect(secondRunSummary.posts).toEqual({
+      inserted: 0,
+      updated: 0,
+      deactivated: 0,
+      unchanged: snapshot.posts.items.length,
+    });
 
     expect(activeUses).toHaveLength(snapshot.uses.sections.length);
     expect(activeNowEntries).toHaveLength(snapshot.now.entries.length);
     expect(activeProjects).toHaveLength(snapshot.projects.items.length);
+    expect(activePosts).toHaveLength(snapshot.posts.items.length);
     expect(useVersions.every((row) => row.version === 1)).toBe(true);
   });
 
@@ -211,12 +270,16 @@ describe.sequential('bootstrap import', () => {
         ...firstSnapshot.projects,
         items: firstSnapshot.projects.items.slice(0, 1),
       },
+      posts: {
+        ...firstSnapshot.posts,
+        items: firstSnapshot.posts.items.slice(0, 1),
+      },
     };
 
     await runImport(harness, firstSnapshot);
     const secondRunSummary = await runImport(harness, secondSnapshot);
 
-    const [staleUse, staleNowEntry, staleProject] = await Promise.all([
+    const [staleUse, staleNowEntry, staleProject, stalePost] = await Promise.all([
       harness.databaseConnection.client
         .select({ isActive: uses.isActive, version: uses.version })
         .from(uses)
@@ -232,30 +295,40 @@ describe.sequential('bootstrap import', () => {
         .from(projects)
         .where(eq(projects.title, 'Project Two'))
         .limit(1),
+      harness.databaseConnection.client
+        .select({ isActive: posts.isActive, version: posts.version })
+        .from(posts)
+        .where(eq(posts.slug, 'shipping-principles'))
+        .limit(1),
     ]);
 
     expect(secondRunSummary.uses.deactivated).toBe(1);
     expect(secondRunSummary.nowEntries.deactivated).toBe(1);
     expect(secondRunSummary.projects.deactivated).toBe(1);
+    expect(secondRunSummary.posts.deactivated).toBe(1);
 
     expect(staleUse[0]?.isActive).toBe(false);
     expect(staleNowEntry[0]?.isActive).toBe(false);
     expect(staleProject[0]?.isActive).toBe(false);
+    expect(stalePost[0]?.isActive).toBe(false);
 
     expect((staleUse[0]?.version ?? 0) > 1).toBe(true);
     expect((staleNowEntry[0]?.version ?? 0) > 1).toBe(true);
     expect((staleProject[0]?.version ?? 0) > 1).toBe(true);
+    expect((stalePost[0]?.version ?? 0) > 1).toBe(true);
   });
 
-  it('returns non-empty now/uses/projects responses after import', async () => {
+  it('returns non-empty now/uses/projects/posts responses after import', async () => {
     const snapshot = createSnapshot();
 
     await runImport(harness, snapshot);
 
-    const [nowResponse, usesResponse, projectsResponse] = await Promise.all([
+    const [nowResponse, usesResponse, projectsResponse, postsListResponse] =
+      await Promise.all([
       harness.app.inject({ method: 'GET', url: '/v1/now' }),
       harness.app.inject({ method: 'GET', url: '/v1/uses' }),
       harness.app.inject({ method: 'GET', url: '/v1/projects?limit=20' }),
+      harness.app.inject({ method: 'GET', url: '/v1/posts?limit=20' }),
     ]);
 
     const nowPayload = nowResponse.json() as {
@@ -267,14 +340,33 @@ describe.sequential('bootstrap import', () => {
     const projectsPayload = projectsResponse.json() as {
       data: unknown[];
     };
+    const postsListPayload = postsListResponse.json() as {
+      data: Array<{ slug: string; bodyMarkdown?: string }>;
+    };
+
+    const firstPostSlug = postsListPayload.data[0]?.slug;
+    const postDetailResponse = await harness.app.inject({
+      method: 'GET',
+      url: `/v1/posts/${firstPostSlug ?? ''}`,
+    });
+    const postDetailPayload = postDetailResponse.json() as {
+      data: { bodyMarkdown: string };
+    };
 
     expect(nowResponse.statusCode).toBe(200);
     expect(usesResponse.statusCode).toBe(200);
     expect(projectsResponse.statusCode).toBe(200);
+    expect(postsListResponse.statusCode).toBe(200);
+    expect(postDetailResponse.statusCode).toBe(200);
 
     expect(nowPayload.data.items.length).toBeGreaterThan(0);
     expect(usesPayload.data.sections.length).toBeGreaterThan(0);
     expect(projectsPayload.data.length).toBeGreaterThan(0);
+    expect(postsListPayload.data.length).toBeGreaterThan(0);
+    expect(postsListPayload.data.every((postRecord) => postRecord.bodyMarkdown === undefined)).toBe(
+      true,
+    );
+    expect(postDetailPayload.data.bodyMarkdown.length).toBeGreaterThan(0);
 
     expect(nowPayload.data.updatedAt).not.toBeNull();
     expect(usesPayload.data.updatedAt).not.toBeNull();
@@ -285,7 +377,7 @@ describe.sequential('bootstrap import', () => {
 
     const summary = await runImport(harness, snapshot, 'dry-run');
 
-    const [usesRows, nowRows, projectRows] = await Promise.all([
+    const [usesRows, nowRows, projectRows, postRows] = await Promise.all([
       harness.databaseConnection.client.select({ id: uses.id }).from(uses),
       harness.databaseConnection.client
         .select({ id: nowEntries.id })
@@ -293,14 +385,17 @@ describe.sequential('bootstrap import', () => {
       harness.databaseConnection.client
         .select({ id: projects.id })
         .from(projects),
+      harness.databaseConnection.client.select({ id: posts.id }).from(posts),
     ]);
 
     expect(summary.uses.inserted).toBe(snapshot.uses.sections.length);
     expect(summary.nowEntries.inserted).toBe(snapshot.now.entries.length);
     expect(summary.projects.inserted).toBe(snapshot.projects.items.length);
+    expect(summary.posts.inserted).toBe(snapshot.posts.items.length);
 
     expect(usesRows).toHaveLength(0);
     expect(nowRows).toHaveLength(0);
     expect(projectRows).toHaveLength(0);
+    expect(postRows).toHaveLength(0);
   });
 });

@@ -5,7 +5,7 @@ info:
   description: |
     Canonical OpenAPI contract for the current shan-api `/v1` behavior.
     Snapshot endpoints are non-paginated (`/v1/now`, `/v1/uses`).
-    Projects uses cursor pagination (`/v1/projects`).
+    Cursor-paginated endpoints: `/v1/projects`, `/v1/posts`.
   license:
     name: UNLICENSED
 servers:
@@ -144,6 +144,74 @@ paths:
                   value:
                     error: Invalid cursor parameter
 
+  /v1/posts:
+    get:
+      tags: [content]
+      summary: List posts with cursor pagination
+      operationId: getPosts
+      description: Cursor-paginated endpoint.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 20 and is capped at 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from previous page response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated posts response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostsListResponse'
+        '400':
+          description: Invalid pagination query (for example invalid cursor).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidCursor:
+                  value:
+                    error: Invalid cursor parameter
+
+  /v1/posts/{slug}:
+    get:
+      tags: [content]
+      summary: Get post detail by slug
+      operationId: getPostBySlug
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Post slug.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Post detail response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostDetailResponse'
+        '404':
+          description: Post not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+
 components:
   securitySchemes:
     internalApiKey:
@@ -185,6 +253,15 @@ components:
       properties:
         error:
           type: string
+
+    NotFoundError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [not_found]
 
     ReadinessChecks:
       type: object
@@ -369,3 +446,129 @@ components:
             $ref: '#/components/schemas/ProjectItem'
         page:
           $ref: '#/components/schemas/ProjectsPage'
+
+    PostListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - slug
+        - title
+        - summary
+        - publishedAt
+        - updatedAt
+        - featured
+        - tags
+        - readingTimeText
+        - readingTimeMinutes
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        featured:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        readingTimeText:
+          type: string
+          nullable: true
+        readingTimeMinutes:
+          type: number
+          format: float
+          nullable: true
+
+    PostsPage:
+      type: object
+      additionalProperties: false
+      required: [nextCursor, hasMore, asOf]
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+        asOf:
+          type: string
+          format: date-time
+
+    PostsListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, page]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostListItem'
+        page:
+          $ref: '#/components/schemas/PostsPage'
+
+    PostDetailData:
+      type: object
+      additionalProperties: false
+      required:
+        - slug
+        - title
+        - summary
+        - bodyMarkdown
+        - publishedAt
+        - updatedAt
+        - updatedAtSource
+        - author
+        - featured
+        - tags
+        - readingTimeText
+        - readingTimeMinutes
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        bodyMarkdown:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        updatedAtSource:
+          type: string
+          format: date-time
+          nullable: true
+        author:
+          type: string
+          nullable: true
+        featured:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        readingTimeText:
+          type: string
+          nullable: true
+        readingTimeMinutes:
+          type: number
+          format: float
+          nullable: true
+
+    PostDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PostDetailData'

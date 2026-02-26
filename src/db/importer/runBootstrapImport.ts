@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { eq, inArray } from 'drizzle-orm';
 
 import type { DatabaseClient } from '../client.js';
-import { meta, nowEntries, projects, uses } from '../schema.js';
+import { meta, nowEntries, posts, projects, uses } from '../schema.js';
 import { toSlug } from '../../lib/slugify.js';
 import type {
   BootstrapContentSnapshot,
@@ -364,6 +364,148 @@ const syncProjectRows = async (
   return summary;
 };
 
+const syncPostRows = async (
+  databaseClient: DatabaseClient,
+  syncOptions: ResourceSyncOptions<{
+    slug: string;
+    title: string;
+    summary: string;
+    bodyMarkdown: string;
+    publishedAt: Date;
+    updatedAtSource: Date | null;
+    author: string | null;
+    featured: boolean;
+    tags: string[];
+    readingTimeText: string;
+    readingTimeMinutes: number;
+    payload: Record<string, unknown>;
+    updatedAt: Date;
+  }>,
+): Promise<ResourceImportSummary> => {
+  const existingRows = await databaseClient
+    .select({
+      id: posts.id,
+      slug: posts.slug,
+      title: posts.title,
+      summary: posts.summary,
+      bodyMarkdown: posts.bodyMarkdown,
+      publishedAt: posts.publishedAt,
+      updatedAtSource: posts.updatedAtSource,
+      author: posts.author,
+      featured: posts.featured,
+      tags: posts.tags,
+      readingTimeText: posts.readingTimeText,
+      readingTimeMinutes: posts.readingTimeMinutes,
+      payload: posts.payload,
+      version: posts.version,
+      isActive: posts.isActive,
+    })
+    .from(posts);
+
+  const existingRowsBySlug = new Map(
+    existingRows.map((existingRow) => [existingRow.slug, existingRow]),
+  );
+
+  const desiredSlugs = new Set(syncOptions.desiredRows.map((desiredRow) => desiredRow.slug));
+
+  const summary = createInitialResourceSummary();
+
+  for (const desiredRow of syncOptions.desiredRows) {
+    const existingRow = existingRowsBySlug.get(desiredRow.slug);
+
+    if (!existingRow) {
+      summary.inserted += 1;
+
+      if (syncOptions.mode === 'apply') {
+        await databaseClient.insert(posts).values({
+          slug: desiredRow.slug,
+          title: desiredRow.title,
+          summary: desiredRow.summary,
+          bodyMarkdown: desiredRow.bodyMarkdown,
+          publishedAt: desiredRow.publishedAt,
+          updatedAtSource: desiredRow.updatedAtSource,
+          author: desiredRow.author,
+          featured: desiredRow.featured,
+          tags: desiredRow.tags,
+          readingTimeText: desiredRow.readingTimeText,
+          readingTimeMinutes: desiredRow.readingTimeMinutes,
+          payload: desiredRow.payload,
+          isActive: true,
+          version: 1,
+          updatedAt: desiredRow.updatedAt,
+        });
+      }
+
+      continue;
+    }
+
+    const hasMeaningfulChange =
+      existingRow.title !== desiredRow.title ||
+      existingRow.summary !== desiredRow.summary ||
+      existingRow.bodyMarkdown !== desiredRow.bodyMarkdown ||
+      existingRow.publishedAt.getTime() !== desiredRow.publishedAt.getTime() ||
+      (existingRow.updatedAtSource?.getTime() ?? null) !==
+        (desiredRow.updatedAtSource?.getTime() ?? null) ||
+      existingRow.author !== desiredRow.author ||
+      existingRow.featured !== desiredRow.featured ||
+      !isDeepStrictEqual(existingRow.tags, desiredRow.tags) ||
+      existingRow.readingTimeText !== desiredRow.readingTimeText ||
+      existingRow.readingTimeMinutes !== desiredRow.readingTimeMinutes ||
+      !isDeepStrictEqual(existingRow.payload, desiredRow.payload) ||
+      !existingRow.isActive;
+
+    if (!hasMeaningfulChange) {
+      summary.unchanged += 1;
+      continue;
+    }
+
+    summary.updated += 1;
+
+    if (syncOptions.mode === 'apply') {
+      await databaseClient
+        .update(posts)
+        .set({
+          title: desiredRow.title,
+          summary: desiredRow.summary,
+          bodyMarkdown: desiredRow.bodyMarkdown,
+          publishedAt: desiredRow.publishedAt,
+          updatedAtSource: desiredRow.updatedAtSource,
+          author: desiredRow.author,
+          featured: desiredRow.featured,
+          tags: desiredRow.tags,
+          readingTimeText: desiredRow.readingTimeText,
+          readingTimeMinutes: desiredRow.readingTimeMinutes,
+          payload: desiredRow.payload,
+          isActive: true,
+          version: existingRow.version + 1,
+          updatedAt: desiredRow.updatedAt,
+        })
+        .where(eq(posts.id, existingRow.id));
+    }
+  }
+
+  const staleRows = existingRows.filter(
+    (existingRow) => existingRow.isActive && !desiredSlugs.has(existingRow.slug),
+  );
+
+  summary.deactivated += staleRows.length;
+
+  if (syncOptions.mode === 'apply') {
+    for (const staleRow of staleRows) {
+      await databaseClient
+        .update(posts)
+        .set({
+          isActive: false,
+          version: staleRow.version + 1,
+          updatedAt: syncOptions.resourceUpdatedAt,
+        })
+        .where(eq(posts.id, staleRow.id));
+    }
+  }
+
+  return summary;
+};
+
 const syncMetaValues = async (
   databaseClient: DatabaseClient,
   mode: ImportMode,
@@ -468,6 +610,10 @@ export const runBootstrapImport = async (
     options.snapshot.projects.lastUpdated,
     executionTimestamp,
   );
+  const postsTimestamp = resolveResourceTimestamp(
+    options.snapshot.posts.lastUpdated,
+    executionTimestamp,
+  );
 
   const usesSlugFactory = createSlugFactory();
   const nowSlugFactory = createSlugFactory();
@@ -507,6 +653,22 @@ export const runBootstrapImport = async (
     updatedAt: withSortOffsetTimestamp(projectsTimestamp, index),
   }));
 
+  const desiredPostRows = options.snapshot.posts.items.map((post) => ({
+    slug: post.slug,
+    title: post.title,
+    summary: post.summary,
+    bodyMarkdown: post.bodyMarkdown,
+    publishedAt: post.publishedAt,
+    updatedAtSource: post.updatedAtSource,
+    author: post.author,
+    featured: post.featured,
+    tags: post.tags,
+    readingTimeText: post.readingTimeText,
+    readingTimeMinutes: post.readingTimeMinutes,
+    payload: post.payload,
+    updatedAt: post.updatedAtSource ?? post.publishedAt,
+  }));
+
   const usesSummary = await syncUsesRows(databaseClient, {
     mode: options.mode,
     resourceUpdatedAt: usesTimestamp,
@@ -525,10 +687,17 @@ export const runBootstrapImport = async (
     desiredRows: desiredProjectRows,
   });
 
+  const postsSummary = await syncPostRows(databaseClient, {
+    mode: options.mode,
+    resourceUpdatedAt: postsTimestamp,
+    desiredRows: desiredPostRows,
+  });
+
   const latestGlobalTimestamp = getLatestTimestamp([
     usesTimestamp,
     nowTimestamp,
     projectsTimestamp,
+    postsTimestamp,
   ]);
 
   const metaEntries = [
@@ -546,6 +715,11 @@ export const runBootstrapImport = async (
       key: 'projects_last_updated',
       value: toIsoString(projectsTimestamp),
       updatedAt: projectsTimestamp,
+    },
+    {
+      key: 'posts_last_updated',
+      value: toIsoString(postsTimestamp),
+      updatedAt: postsTimestamp,
     },
     {
       key: 'now_narrative',
@@ -574,6 +748,7 @@ export const runBootstrapImport = async (
     uses: usesSummary,
     nowEntries: nowSummary,
     projects: projectsSummary,
+    posts: postsSummary,
     meta: metaSummary,
   };
 };

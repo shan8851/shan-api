@@ -25,6 +25,7 @@ const getTruncateTablesQuery = (): string => `
   TRUNCATE TABLE
     uses,
     projects,
+    posts,
     now_entries,
     meta
   RESTART IDENTITY CASCADE;

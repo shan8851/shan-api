@@ -1,6 +1,6 @@
 # shan-api — Implementation Plan (v1 draft)
 
-Status: draft for review
+Status: historical draft (superseded by `docs/next-steps.md` for active execution)
 Date: 2026-02-25
 Owner: Shan + Giles
 

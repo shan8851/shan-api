@@ -20,6 +20,21 @@ export type ProjectSnapshot = {
   payload: Record<string, unknown>;
 };
 
+export type PostSnapshot = {
+  slug: string;
+  title: string;
+  summary: string;
+  bodyMarkdown: string;
+  publishedAt: Date;
+  updatedAtSource: Date | null;
+  author: string | null;
+  featured: boolean;
+  tags: string[];
+  readingTimeText: string;
+  readingTimeMinutes: number;
+  payload: Record<string, unknown>;
+};
+
 export type BootstrapContentSnapshot = {
   uses: {
     lastUpdated: Date | null;
@@ -33,6 +48,10 @@ export type BootstrapContentSnapshot = {
   projects: {
     lastUpdated: Date | null;
     items: ProjectSnapshot[];
+  };
+  posts: {
+    lastUpdated: Date | null;
+    items: PostSnapshot[];
   };
 };
 
@@ -56,5 +75,6 @@ export type BootstrapImportSummary = {
   uses: ResourceImportSummary;
   nowEntries: ResourceImportSummary;
   projects: ResourceImportSummary;
+  posts: ResourceImportSummary;
   meta: MetaImportSummary;
 };

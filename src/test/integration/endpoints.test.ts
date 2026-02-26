@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createApp } from '../../app.js';
-import { meta, nowEntries, projects, uses } from '../../db/schema.js';
+import { meta, nowEntries, posts, projects, uses } from '../../db/schema.js';
 import {
   createIntegrationHarness,
   type IntegrationHarness,
@@ -49,6 +49,43 @@ type ProjectsEndpointResponse = {
     nextCursor: string | null;
     hasMore: boolean;
     asOf: string;
+  };
+};
+
+type PostsListEndpointResponse = {
+  data: Array<{
+    slug: string;
+    title: string;
+    summary: string;
+    publishedAt: string;
+    updatedAt: string;
+    featured: boolean;
+    tags: string[];
+    readingTimeText: string | null;
+    readingTimeMinutes: number | null;
+    bodyMarkdown?: string;
+  }>;
+  page: {
+    nextCursor: string | null;
+    hasMore: boolean;
+    asOf: string;
+  };
+};
+
+type PostDetailEndpointResponse = {
+  data: {
+    slug: string;
+    title: string;
+    summary: string;
+    bodyMarkdown: string;
+    publishedAt: string;
+    updatedAt: string;
+    updatedAtSource: string | null;
+    author: string | null;
+    featured: boolean;
+    tags: string[];
+    readingTimeText: string | null;
+    readingTimeMinutes: number | null;
   };
 };
 
@@ -435,6 +472,198 @@ describe.sequential('endpoint integration tests', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error: 'Invalid cursor parameter' });
+  });
+
+  it('returns empty posts list response when no active rows exist', async () => {
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/posts',
+    });
+
+    const payload = response.json() as PostsListEndpointResponse;
+
+    expect(response.statusCode).toBe(200);
+    expect(payload.data).toEqual([]);
+    expect(payload.page.hasMore).toBe(false);
+    expect(payload.page.nextCursor).toBeNull();
+    expect(isIsoDateString(payload.page.asOf)).toBe(true);
+  });
+
+  it('returns paginated posts metadata and supports cursor pagination', async () => {
+    await harness.databaseConnection.client.insert(posts).values([
+      {
+        slug: 'oldest-post',
+        title: 'Oldest post',
+        summary: 'Oldest summary',
+        bodyMarkdown: '# Oldest',
+        publishedAt: new Date('2026-02-18T00:00:00.000Z'),
+        updatedAtSource: null,
+        author: 'Shan',
+        featured: false,
+        tags: ['archive'],
+        readingTimeText: '1 min read',
+        readingTimeMinutes: 1,
+        payload: { source: 'test' },
+        updatedAt: new Date('2026-02-18T00:00:00.000Z'),
+      },
+      {
+        slug: 'middle-post',
+        title: 'Middle post',
+        summary: 'Middle summary',
+        bodyMarkdown: '# Middle',
+        publishedAt: new Date('2026-02-19T00:00:00.000Z'),
+        updatedAtSource: new Date('2026-02-21T00:00:00.000Z'),
+        author: null,
+        featured: false,
+        tags: ['build'],
+        readingTimeText: '2 min read',
+        readingTimeMinutes: 2,
+        payload: { source: 'test' },
+        updatedAt: new Date('2026-02-21T00:00:00.000Z'),
+      },
+      {
+        slug: 'newest-post',
+        title: 'Newest post',
+        summary: 'Newest summary',
+        bodyMarkdown: '# Newest',
+        publishedAt: new Date('2026-02-20T00:00:00.000Z'),
+        updatedAtSource: null,
+        author: 'Shan',
+        featured: true,
+        tags: ['agents'],
+        readingTimeText: '3 min read',
+        readingTimeMinutes: 3,
+        payload: { source: 'test' },
+        updatedAt: new Date('2026-02-20T00:00:00.000Z'),
+      },
+    ]);
+
+    const firstPageResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/posts?limit=2',
+    });
+
+    const firstPagePayload = firstPageResponse.json() as PostsListEndpointResponse;
+
+    expect(firstPageResponse.statusCode).toBe(200);
+    expect(firstPagePayload.data.map((postRecord) => postRecord.slug)).toEqual([
+      'newest-post',
+      'middle-post',
+    ]);
+    expect(firstPagePayload.data.every((postRecord) => postRecord.bodyMarkdown === undefined)).toBe(
+      true,
+    );
+    expect(firstPagePayload.page.hasMore).toBe(true);
+    expect(typeof firstPagePayload.page.nextCursor).toBe('string');
+
+    const cursor = firstPagePayload.page.nextCursor ?? '';
+    const secondPageResponse = await harness.app.inject({
+      method: 'GET',
+      url: `/v1/posts?limit=2&cursor=${cursor}`,
+    });
+
+    const secondPagePayload = secondPageResponse.json() as PostsListEndpointResponse;
+
+    expect(secondPageResponse.statusCode).toBe(200);
+    expect(secondPagePayload.data.map((postRecord) => postRecord.slug)).toEqual([
+      'oldest-post',
+    ]);
+    expect(secondPagePayload.page.hasMore).toBe(false);
+    expect(secondPagePayload.page.nextCursor).toBeNull();
+  });
+
+  it('caps posts limit to 50 records', async () => {
+    const startTimestamp = new Date('2026-02-01T00:00:00.000Z').getTime();
+    const postRows = Array.from({ length: 55 }, (_value, index) => ({
+      slug: `post-${index + 1}`,
+      title: `Post ${index + 1}`,
+      summary: `Summary ${index + 1}`,
+      bodyMarkdown: `# Post ${index + 1}`,
+      publishedAt: new Date(startTimestamp + index * 86400000),
+      updatedAtSource: null,
+      author: null,
+      featured: false,
+      tags: ['seed'],
+      readingTimeText: '1 min read',
+      readingTimeMinutes: 1,
+      payload: { index: index + 1 },
+      updatedAt: new Date(startTimestamp + index * 86400000),
+    }));
+
+    await harness.databaseConnection.client.insert(posts).values(postRows);
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/posts?limit=100',
+    });
+
+    const payload = response.json() as PostsListEndpointResponse;
+
+    expect(response.statusCode).toBe(200);
+    expect(payload.data).toHaveLength(50);
+    expect(payload.page.hasMore).toBe(true);
+    expect(typeof payload.page.nextCursor).toBe('string');
+  });
+
+  it('returns 400 for an invalid posts cursor', async () => {
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/posts?cursor=invalid-cursor-token',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: 'Invalid cursor parameter' });
+  });
+
+  it('returns full post payload from GET /v1/posts/:slug', async () => {
+    await harness.databaseConnection.client.insert(posts).values({
+      slug: 'deep-dive',
+      title: 'Deep dive',
+      summary: 'Detailed post summary',
+      bodyMarkdown: '# Deep dive\n\nLong form content.',
+      publishedAt: new Date('2026-02-20T00:00:00.000Z'),
+      updatedAtSource: new Date('2026-02-21T00:00:00.000Z'),
+      author: 'Shan',
+      featured: true,
+      tags: ['architecture', 'api'],
+      readingTimeText: '4 min read',
+      readingTimeMinutes: 4,
+      payload: { source: 'test' },
+      updatedAt: new Date('2026-02-21T00:00:00.000Z'),
+    });
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/posts/deep-dive',
+    });
+
+    const payload = response.json() as PostDetailEndpointResponse;
+
+    expect(response.statusCode).toBe(200);
+    expect(payload.data).toEqual({
+      slug: 'deep-dive',
+      title: 'Deep dive',
+      summary: 'Detailed post summary',
+      bodyMarkdown: '# Deep dive\n\nLong form content.',
+      publishedAt: '2026-02-20T00:00:00.000Z',
+      updatedAt: '2026-02-21T00:00:00.000Z',
+      updatedAtSource: '2026-02-21T00:00:00.000Z',
+      author: 'Shan',
+      featured: true,
+      tags: ['architecture', 'api'],
+      readingTimeText: '4 min read',
+      readingTimeMinutes: 4,
+    });
+  });
+
+  it('returns not_found for missing posts slug', async () => {
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/posts/does-not-exist',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: 'not_found' });
   });
 
   it('rejects unauthorized requests for GET /readyz', async () => {

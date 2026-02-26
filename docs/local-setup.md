@@ -58,6 +58,7 @@ openssl rand -hex 32
 - Source files:
   - `/home/shan/giles/shan_site/app/content/uses.ts`
   - `/home/shan/giles/shan_site/app/content/operatorFrontDoor.ts`
+  - `/home/shan/giles/shan_site/content/writing/*.md`
 - Import is idempotent:
   - upserts by stable slug/key
   - updates changed rows

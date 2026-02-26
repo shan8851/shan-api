@@ -1,12 +1,21 @@
 # shan-api
 
-Standalone backend API for Shan content resources (`uses`, `projects`, `now`).
+Standalone backend API for Shan content resources (`uses`, `projects`, `now`, `posts`).
 
 ## Requirements
 
 - Node.js 20+
 - Docker (required for integration tests via Testcontainers)
 - Neon Postgres credentials (or another Postgres connection)
+
+## Docs
+
+- `docs/decisions-log.md` — locked architecture/product decisions
+- `docs/next-steps.md` — active execution plan (hardening/deploy/write-path)
+- `docs/local-setup.md` — env + local setup flow
+- `docs/content-source-map.md` — current bootstrap source mapping from `shan_site`
+- `docs/contract-review-checklist.md` — OpenAPI review checklist
+- `docs/implementation-plan.md` — historical draft plan (kept for context)
 
 ## Environment
 
@@ -63,12 +72,15 @@ curl -s "$API_BASE_URL/healthz"
 curl -s "$API_BASE_URL/v1/now"
 curl -s "$API_BASE_URL/v1/uses"
 curl -s "$API_BASE_URL/v1/projects?limit=20"
+curl -s "$API_BASE_URL/v1/posts?limit=20"
+curl -s "$API_BASE_URL/v1/posts/agent-basics"
 ```
 
 Endpoint pagination policy:
 - `/v1/now`: snapshot (non-paginated)
 - `/v1/uses`: snapshot (non-paginated)
 - `/v1/projects`: cursor-paginated
+- `/v1/posts`: cursor-paginated
 
 Protected endpoints:
 
@@ -91,12 +103,23 @@ NEXT_CURSOR=$(echo "$FIRST_PAGE" | jq -r '.page.nextCursor')
 curl -s "$API_BASE_URL/v1/projects?limit=2&cursor=$NEXT_CURSOR"
 ```
 
+Posts pagination + detail follow-up request:
+
+```bash
+POSTS_PAGE=$(curl -s "$API_BASE_URL/v1/posts?limit=2")
+POSTS_NEXT_CURSOR=$(echo "$POSTS_PAGE" | jq -r '.page.nextCursor')
+POST_SLUG=$(echo "$POSTS_PAGE" | jq -r '.data[0].slug')
+curl -s "$API_BASE_URL/v1/posts?limit=2&cursor=$POSTS_NEXT_CURSOR"
+curl -s "$API_BASE_URL/v1/posts/$POST_SLUG"
+```
+
 Current data behavior:
 - Endpoints are DB-backed.
 - `shan_site` import is a bootstrap path to initialize data.
 - Postgres remains the canonical source of truth after bootstrap.
 - The importer is idempotent: re-runs upsert by stable slug/key and deactivate stale rows.
 - `version` increments only on meaningful row changes (including reactivation/deactivation), and stays stable on no-op re-runs.
+- Posts import source path: `/home/shan/giles/shan_site/content/writing/*.md`.
 
 Optional bootstrap source override:
 
@@ -121,6 +144,7 @@ Endpoint semantics tracked in contract:
 - `/v1/now`: snapshot (non-paginated)
 - `/v1/uses`: snapshot (non-paginated)
 - `/v1/projects`: cursor-paginated
+- `/v1/posts`: cursor-paginated
 
 Contract tooling:
 

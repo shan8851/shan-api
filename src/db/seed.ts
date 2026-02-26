@@ -38,6 +38,7 @@ const printSummary = (summary: BootstrapImportSummary): void => {
     formatResourceSummaryLine('uses', summary.uses),
     formatResourceSummaryLine('now_entries', summary.nowEntries),
     formatResourceSummaryLine('projects', summary.projects),
+    formatResourceSummaryLine('posts', summary.posts),
     formatMetaSummaryLine(summary.meta),
   ];
 

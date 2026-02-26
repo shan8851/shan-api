@@ -33,11 +33,18 @@ Yes — for now, source content lives in the `shan_site` project and should be i
   - `selectedShippedWork`
   - `siteLastUpdated`
 
-## Later resources (not in v1)
-
-### `blogs`
+### `posts`
 - Source path: `shan_site/content/writing/*.md`
-- Used by site note/writing loaders.
+- Frontmatter fields consumed:
+  - `title`
+  - `summary`
+  - `date`
+  - `updated` (optional)
+  - `tags` (optional)
+  - `author` (optional)
+  - `featured` (optional)
+- Slug source:
+  - markdown filename without `.md` / `.mdx`
 
 ## Migration notes
 - Current source is code-first (TypeScript exports), not DB-first.

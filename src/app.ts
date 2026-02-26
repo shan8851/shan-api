@@ -10,6 +10,7 @@ import { registerHealthzRoute } from './routes/healthz.js';
 import { registerMetricsRoute } from './routes/metrics.js';
 import { registerReadyzRoute } from './routes/readyz.js';
 import { registerNowRoute } from './routes/v1/now.js';
+import { registerPostsRoute } from './routes/v1/posts.js';
 import { registerProjectsRoute } from './routes/v1/projects.js';
 import { registerUsesRoute } from './routes/v1/uses.js';
 
@@ -37,6 +38,7 @@ export const createApp = (createAppOptions: CreateAppOptions): FastifyInstance =
   registerNowRoute(app, createAppOptions.databaseConnection.client);
   registerUsesRoute(app, createAppOptions.databaseConnection.client);
   registerProjectsRoute(app, createAppOptions.databaseConnection.client);
+  registerPostsRoute(app, createAppOptions.databaseConnection.client);
   registerReadyzRoute(app, {
     preHandler: internalApiKeyGuard,
     checkReadiness: readyzCheck,

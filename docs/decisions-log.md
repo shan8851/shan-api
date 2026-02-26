@@ -365,7 +365,29 @@ Use this shape for new entries:
 - **Consequences:** preserves debugging quality now without delaying delivery.
 - **Revisit trigger:** if incident debugging proves log correlation insufficient.
 
+### D-026 — Posts resource added to v1 scope
+- **Status:** decided
+- **Date:** 2026-02-26
+- **Owner:** Shan
+- **Context:** expand content coverage after stabilizing initial read API foundations.
+- **Options considered:** keep posts deferred, add posts now.
+- **Decision:** add posts in v1 with:
+  - `GET /v1/posts` (cursor paginated metadata list)
+  - `GET /v1/posts/:slug` (full markdown body detail)
+- **Consequences:** broader immediate API utility while keeping write-path deferred.
+- **Revisit trigger:** if payload/performance or moderation requirements require splitting public metadata vs private body content.
+
+### D-027 — Bootstrap import policy
+- **Status:** decided
+- **Date:** 2026-02-26
+- **Owner:** Shan
+- **Context:** define short-term role of `shan_site` import after read API is live.
+- **Options considered:** keep long-term dual-source flow, one-time bootstrap then DB-canonical.
+- **Decision:** `shan_site` importer is bootstrap/backfill only; Postgres is canonical for ongoing operation. Private write path will replace routine importer dependence.
+- **Consequences:** clear migration direction and reduced long-term source-of-truth ambiguity.
+- **Revisit trigger:** if operational reality requires periodic markdown-to-db sync for external contributors.
+
 ---
 
 ## Open follow-ups (not locked yet)
-- None. Current implementation plan has no blocking open questions.
+- None blocking. Active execution priorities are tracked in `docs/next-steps.md`.
