@@ -101,3 +101,31 @@ npm test
 npm run build
 npm run lint
 ```
+
+## OpenAPI contract
+
+Canonical v1 contract file:
+- `openapi/v1.yaml`
+
+Endpoint semantics tracked in contract:
+- `/v1/now`: snapshot (non-paginated)
+- `/v1/uses`: snapshot (non-paginated)
+- `/v1/projects`: cursor-paginated
+
+Contract tooling:
+
+```bash
+npm run openapi:lint
+npm run openapi:validate
+npm run openapi:check-breaking
+```
+
+CI-compatible local flow:
+
+```bash
+npm run openapi:ci
+```
+
+Breaking check baseline path:
+- `openapi/baseline/v1.yaml`
+- If baseline is missing, the check prints a clear skip message and exits successfully.

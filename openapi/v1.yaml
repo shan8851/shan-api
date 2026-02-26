@@ -1,0 +1,371 @@
+openapi: 3.0.3
+info:
+  title: shan-api v1 contract
+  version: 1.0.0
+  description: |
+    Canonical OpenAPI contract for the current shan-api `/v1` behavior.
+    Snapshot endpoints are non-paginated (`/v1/now`, `/v1/uses`).
+    Projects uses cursor pagination (`/v1/projects`).
+  license:
+    name: UNLICENSED
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+
+tags:
+  - name: system
+    description: Operational health and metrics endpoints
+  - name: content
+    description: Public read content endpoints
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: Process liveness check
+      operationId: getHealthz
+      security: []
+      responses:
+        '200':
+          description: API process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthzResponse'
+
+  /readyz:
+    get:
+      tags: [system]
+      summary: Dependency readiness check
+      operationId: getReadyz
+      security:
+        - internalApiKey: []
+      responses:
+        '200':
+          description: API dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyzReadyResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedResponse'
+        '503':
+          description: API dependencies are not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyzNotReadyResponse'
+
+  /metrics:
+    get:
+      tags: [system]
+      summary: Prometheus metrics endpoint
+      operationId: getMetrics
+      security:
+        - internalApiKey: []
+      responses:
+        '200':
+          description: Prometheus text exposition payload.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedResponse'
+
+  /v1/now:
+    get:
+      tags: [content]
+      summary: Current now snapshot
+      operationId: getNowSnapshot
+      description: Snapshot endpoint (non-paginated).
+      security: []
+      responses:
+        '200':
+          description: Current now snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NowSnapshotResponse'
+
+  /v1/uses:
+    get:
+      tags: [content]
+      summary: Current uses snapshot
+      operationId: getUsesSnapshot
+      description: Snapshot endpoint (non-paginated).
+      security: []
+      responses:
+        '200':
+          description: Current uses snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsesSnapshotResponse'
+
+  /v1/projects:
+    get:
+      tags: [content]
+      summary: List projects with cursor pagination
+      operationId: getProjects
+      description: Cursor-paginated endpoint.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 20 and is capped at 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from previous page response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated projects response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectsListResponse'
+        '400':
+          description: Invalid pagination query (for example invalid cursor).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidCursor:
+                  value:
+                    error: Invalid cursor parameter
+
+components:
+  securitySchemes:
+    internalApiKey:
+      type: apiKey
+      in: header
+      name: x-internal-api-key
+
+  responses:
+    UnauthorizedResponse:
+      description: Missing or invalid internal API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnauthorizedError'
+
+  schemas:
+    HealthzResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    UnauthorizedError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [unauthorized]
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    ReadinessChecks:
+      type: object
+      additionalProperties: false
+      required: [database, migrations, query]
+      properties:
+        database:
+          type: string
+          enum: [ok, failed]
+        migrations:
+          type: string
+          enum: [ok, failed]
+        query:
+          type: string
+          enum: [ok, failed]
+
+    ReadyzReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        checks:
+          $ref: '#/components/schemas/ReadinessChecks'
+
+    ReadyzNotReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [status, checks, message]
+      properties:
+        status:
+          type: string
+          enum: [not_ready]
+        checks:
+          $ref: '#/components/schemas/ReadinessChecks'
+        message:
+          type: string
+
+    NowItem:
+      type: object
+      additionalProperties: false
+      required: [slug, label, text, href]
+      properties:
+        slug:
+          type: string
+        label:
+          type: string
+        text:
+          type: string
+        href:
+          type: string
+          nullable: true
+
+    NowSnapshotData:
+      type: object
+      additionalProperties: false
+      required: [updatedAt, narrative, items]
+      properties:
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        narrative:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NowItem'
+
+    NowSnapshotResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/NowSnapshotData'
+
+    UsesSectionItem:
+      type: object
+      additionalProperties: false
+      required: [label, value]
+      properties:
+        label:
+          type: string
+        value:
+          type: string
+
+    UsesSection:
+      type: object
+      additionalProperties: false
+      required: [slug, title, items]
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsesSectionItem'
+
+    UsesSnapshotData:
+      type: object
+      additionalProperties: false
+      required: [updatedAt, sections]
+      properties:
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsesSection'
+
+    UsesSnapshotResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/UsesSnapshotData'
+
+    ProjectItem:
+      type: object
+      additionalProperties: false
+      required:
+        - slug
+        - title
+        - summary
+        - href
+        - updatedAt
+        - version
+        - isActive
+        - payload
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        href:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+        isActive:
+          type: boolean
+        payload:
+          type: object
+          additionalProperties: true
+
+    ProjectsPage:
+      type: object
+      additionalProperties: false
+      required: [nextCursor, hasMore, asOf]
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+        asOf:
+          type: string
+          format: date-time
+
+    ProjectsListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, page]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectItem'
+        page:
+          $ref: '#/components/schemas/ProjectsPage'
